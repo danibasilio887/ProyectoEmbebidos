@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Space Rover · Cámara</title>
+  <style>
+    :root{ --bg:#0b1020; --card:#121a33; --muted:#9fb0d3; --text:#ecf3ff; --track:#1e2a52; --ok-bg: #0f2d1e; --ok-border: #1a4d32; --ok-text: #34d399; --err-bg: #3a161f; --err-border: #7f2031; --err-text: #f799a9; }
+    *{box-sizing:border-box} body{margin:0;font:16px system-ui;background:linear-gradient(180deg,#0b1020 0%,#0b0f1a 100%);color:var(--text)}
+    header{position:sticky;top:0;background:rgba(8,12,26,.75);backdrop-filter:blur(10px);border-bottom:1px solid #1c254d; z-index: 10;}
+    .wrap{max-width:900px;margin:0 auto;padding:14px}
+    .row{display:flex;align-items:center;gap:10px;justify-content:space-between}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#0e1736;border:1px solid #1e2a52;font-size:13px;color:#9fb0d3;text-decoration:none}
+    .card{background:var(--card);border:1px solid #1e2a52;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);margin:16px}
+    .card .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #1e2a52;color:#9fb0d3}
+    .card .bd{padding:14px}
+    img{width:100%;border-radius:12px;border:1px solid #1e2a52;background:#000;aspect-ratio:16/9;object-fit:cover; display: block;}
+    .cfg-btn{border:none;background:#0e1736;border:1px solid #1e2a52;border-radius:10px;padding:8px 10px;color:#cfe3ff}
+    dialog{border:1px solid #1e2a52;background:#0d1736;color:var(--text);border-radius:14px;max-width:520px;width:90%}
+    input[type="text"]{width:100%;padding:10px;border-radius:10px;border:1px solid #2a3b77;background:#07102e;color:#e2ecff}
+    .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:10px}
+    .muted{color:var(--muted); font-size: 14px;}
+    
+    /* --- Estilos para el estado del stream --- */
+    .status-msg {
+      padding: 10px 14px;
+      border-radius: 12px;
+      margin-top: 10px;
+      font-weight: 500;
+      border: 1px solid var(--track);
+    }
+    .status-msg.ok {
+      background: var(--ok-bg);
+      border-color: var(--ok-border);
+      color: var(--ok-text);
+    }
+    .status-msg.error {
+      background: var(--err-bg);
+      border-color: var(--err-border);
+      color: var(--err-text);
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap row">
+    <nav style="display:flex;gap:8px;align-items:center">
+      <a class="pill" href="/home">🏠 Inicio</a>
+      <a class="pill" href="/control">🕹️ Control</a>
+    </nav>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="cfg-btn" id="openCfg">⚙️ Stream</button>
+      <button class="cfg-btn" id="refreshCam">Recargar</button>
+    </div>
+  </div>
+</header>
+
+<section class="card">
+  <div class="hd"><span>Streaming de cámara (ESP32-CAM)</span></div>
+  <div class="bd">
+    <!-- 
+      Eventos 'onload' y 'onerror' para el manejo de estado
+    -->
+    <img id="cam" alt="stream" onload="handleStreamSuccess()" onerror="handleStreamError()" />
+
+    <!-- Visor de estado -->
+    <div id="streamStatus" class="status-msg" style="display:none;"></div>
+
+    <!-- TEXTO ACTUALIZADO -->
+    <p class="muted" style="margin:12px 0 0">
+      La URL por defecto es <code>http://rover-cam.local:81/stream</code>.
+      Si el stream no carga, asegúrate de que el ESP32-CAM esté encendido y conectado a la misma red WiFi que el rover.
+    </p>
+  </div>
+</section>
+
+<dialog id="cfg">
+  <form method="dialog">
+    <h3>Config de stream</h3>
+    <label>URL del stream de cámara</label>
+    <!-- PLACEHOLDER ACTUALIZADO -->
+    <input type="text" id="cfgCam" placeholder="http://rover-cam.local:81/stream" />
+    <div class="actions">
+      <button class="cfg-btn" value="cancel">Cancelar</button>
+      <button class="cfg-btn" id="saveCfg" value="default">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const statusEl = el('streamStatus');
+  
+  // Configuración inicial
+  let camUrl = localStorage.getItem('camUrl') || '';
+  let ws = null;
+
+  // Función para cargar el stream
+  const loadStream = (url) => {
+    if (!url) return;
+    console.log('[CAM] Intentando cargar:', url);
+    el('cam').src = url;
+    statusEl.style.display = 'none'; // Ocultar errores previos
+  };
+
+  // 1. Intentar cargar lo que tengamos guardado
+  if (camUrl) loadStream(camUrl);
+
+  // 2. Conectar WebSocket para obtener la IP real (Respaldo robusto)
+  const initWS = () => {
+    const host = location.hostname || '192.168.4.1';
+    ws = new WebSocket(`ws://${host}:81/`);
+    
+    ws.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data);
+        // Si el Host nos manda la IP de la cámara
+        if (data.cam_ip && data.cam_ip !== "desconocida") {
+            const newUrl = `http://${data.cam_ip}:81/stream`;
+            // Solo recargar si la IP es diferente a la que tenemos
+            if (newUrl !== camUrl) {
+                console.log('[CAM] Nueva IP recibida:', newUrl);
+                camUrl = newUrl;
+                localStorage.setItem('camUrl', camUrl);
+                loadStream(camUrl);
+            }
+        }
+      } catch (e) {}
+    };
+  };
+  
+  // Iniciar WS en segundo plano
+  initWS();
+
+  // Handlers de la UI (Igual que antes)
+  el('openCfg').onclick = ()=>{ el('cfgCam').value = camUrl; el('cfg').showModal(); };
+  
+  el('saveCfg').onclick = (e)=>{ 
+    e.preventDefault(); 
+    camUrl = el('cfgCam').value;
+    localStorage.setItem('camUrl', camUrl);
+    el('cfg').close(); 
+    loadStream(camUrl);
+  };
+
+  el('refreshCam').onclick = ()=>{ 
+    el('cam').src = ''; 
+    setTimeout(()=> {
+      // Truco del timestamp para romper caché del navegador
+      const u = new URL(camUrl);
+      u.searchParams.set('_t', Date.now()); 
+      el('cam').src = u.href;
+    }, 100); 
+  };
+
+  // Manejo de Errores Visuales
+  window.handleStreamSuccess = () => {
+    statusEl.textContent = 'Stream conectado (Online)';
+    statusEl.className = 'status-msg ok';
+    statusEl.style.display = 'block';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+  };
+
+  window.handleStreamError = () => {
+    statusEl.innerHTML = `
+      Error de conexión.<br>
+      <small>Intentando conectar a: ${camUrl || 'Sin URL'}</small><br>
+      <small>Verifica que el ESP32-CAM esté encendido.</small>
+    `;
+    statusEl.className = 'status-msg error';
+    statusEl.style.display = 'block';
+  };
+})();
+</script>
+</body>
+</html>

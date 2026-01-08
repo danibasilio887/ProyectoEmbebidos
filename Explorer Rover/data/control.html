@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Explorer Rover · Control FPV</title>
+  <style>
+    /* --- ESTILOS BASE (Glassmorphism Oscuro) --- */
+    :root{ 
+      --bg:#0b1020; --card:rgba(18, 26, 51, 0.95); --muted:#9fb0d3; --text:#ecf3ff; 
+      --accent:#60a5fa; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b; --track:#1e2a52; 
+    }
+    *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;} 
+    body{
+      margin:0; font:14px system-ui,sans-serif;
+      background:linear-gradient(180deg,#0b1020 0%,#05080f 100%);
+      color:var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    
+    /* --- HEADER --- */
+    header{
+      position:sticky; top:0; background:rgba(8,12,26,.95); backdrop-filter:blur(12px);
+      border-bottom:1px solid #1c254d; z-index:100; height: 50px; display: flex; 
+      align-items: center; justify-content: center; padding: 0 10px;
+    }
+    .wrap-head{ width:100%; max-width:1000px; display:flex; justify-content:space-between; align-items:center;}
+    
+    .nav-group { display: flex; gap: 8px; align-items: center; }
+    
+    .pill{
+      display:inline-flex; align-items:center; gap:6px; padding:5px 12px; 
+      border-radius:99px; background:#0e1736; border:1px solid #1e2a52; 
+      font-size:12px; color:#9fb0d3; text-decoration:none; transition:0.2s; white-space: nowrap;
+    }
+    .pill:active{ transform:scale(0.96); }
+    .pill.ok dot{ background:var(--ok); box-shadow:0 0 8px var(--ok); } 
+    .pill.bad dot{ background:var(--bad); }
+    dot{ width:8px; height:8px; border-radius:50%; background:#64748b; transition:0.3s; }
+
+    /* --- GRID PRINCIPAL (COCKPIT) --- */
+    main {
+      flex: 1; padding: 10px; display: flex; justify-content: center; overflow-y: auto;
+    }
+    .cockpit-grid {
+      display: grid; gap: 10px; width: 100%; max-width: 1000px;
+      /* Layout Móvil Vertical */
+      grid-template-columns: 1fr 1fr; 
+      grid-template-areas: 
+        "video video"
+        "joyL joyR"
+        "acts acts";
+      align-content: start;
+    }
+
+    /* Layout Paisaje */
+    @media (min-width: 700px) {
+      .cockpit-grid {
+        grid-template-columns: 200px 1fr 200px;
+        grid-template-areas: 
+          "joyL video joyR"
+          "joyL acts joyR";
+        align-items: center; height: 100%;
+      }
+    }
+
+    /* --- PANELES --- */
+    .panel {
+      background: var(--card); border: 1px solid #1e2a52; border-radius: 16px;
+      padding: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      position: relative;
+    }
+
+    /* --- JOYSTICKS --- */
+    .area-joyL { grid-area: joyL; }
+    .area-joyR { grid-area: joyR; }
+    
+    .joy-container { position: relative; width: 140px; height: 140px; }
+    .joy-base {
+      width: 100%; height: 100%; background: radial-gradient(circle, #1e2a52 0%, #0e1736 60%);
+      border: 2px solid #2a3b77; border-radius: 50%;
+      position: relative; touch-action: none;
+    }
+    .joy-stick {
+      width: 50px; height: 50px; background: radial-gradient(circle at 30% 30%, var(--accent), #1e3a8a);
+      border: 2px solid #fff; border-radius: 50%; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+      pointer-events: none; transition: transform 0.05s linear;
+    }
+    .joy-label { 
+      margin-top: 8px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; 
+      text-align: center;
+    }
+
+    /* --- VIDEO Y HUD (CENTRO) --- */
+    .area-video { 
+      grid-area: video; display: flex; flex-direction: column; gap: 10px; 
+      background: transparent; border: none; padding: 0; 
+    }
+    
+    .video-frame {
+      background: #000; border: 1px solid #2a3b77; border-radius: 12px;
+      width: 100%; aspect-ratio: 4/3; position: relative; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    #camStream { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .overlay-msg {
+      position: absolute; color: var(--muted); font-family: monospace; text-align: center;
+      background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 8px;
+    }
+
+    /* --- INSTRUMENTOS IMU (CON SVG) --- */
+    .hud-row {
+      display: flex; gap: 10px; width: 100%;
+    }
+    .gauge {
+      flex: 1; background: var(--card); border: 1px solid #1e2a52; border-radius: 12px;
+      padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .gauge-title { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .gauge-val { font-family: monospace; font-weight: bold; color: var(--accent); font-size: 14px; }
+    .danger { color: var(--bad); }
+
+    .icon-box { 
+      position: relative; width: 60px; height: 40px; 
+      display: flex; align-items: center; justify-content: center; 
+    }
+    
+    .horizon { 
+      position: absolute; width: 100%; height: 1px; 
+      background: rgba(255,255,255,0.2); z-index: 0;
+    }
+    
+    .vehicle-icon { 
+      width: 50px; height: 30px; 
+      background-size: contain; background-repeat: no-repeat; background-position: center;
+      transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      /* SVG DATA URI: Iconos vectoriales ligeros */
+    }
+    
+    /* Icono trasero (rectángulo con ruedas) */
+    .icon-rear { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40' fill='none' stroke='%2360a5fa' stroke-width='2'%3E%3Cpath d='M10 30 L54 30 L50 15 L14 15 Z M14 30 L14 36 M50 30 L50 36'/%3E%3C/svg%3E"); }
+    
+    /* Icono lateral (silueta de rover) */
+    .icon-side { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40' fill='none' stroke='%2360a5fa' stroke-width='2'%3E%3Cpath d='M5 30 L50 30 L58 20 L40 10 L15 10 Z M10 30 A5 5 0 0 0 20 30 M40 30 A5 5 0 0 0 50 30'/%3E%3C/svg%3E"); }
+
+
+    /* --- ACCIONES --- */
+    .area-acts { grid-area: acts; display: flex; flex-direction: column; gap: 10px; }
+    
+    .slider-box { 
+      display: flex; align-items: center; gap: 10px; background: var(--card); 
+      padding: 8px 12px; border-radius: 12px; border: 1px solid #1e2a52;
+    }
+    input[type=range] { flex: 1; accent-color: var(--accent); height: 6px; background: #1e2a52; border-radius: 4px; }
+    
+    .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    button {
+      padding: 14px; border: none; border-radius: 12px; font-weight: 700; font-size: 13px; 
+      cursor: pointer; background: #1e2a52; color: var(--text); border: 1px solid #2a3b77;
+      transition: 0.2s;
+    }
+    button:active { transform: scale(0.98); }
+    button.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    button.stop { background: var(--bad); color: #fff; border-color: #991b1b; }
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wrap-head">
+    <nav class="nav-group">
+      <a class="pill" href="/home">🏠 Inicio</a>
+    </nav>
+    <div class="nav-group">
+      <div class="pill" title="Batería">🔋 <span id="batPct">--%</span></div>
+      <div id="statusPill" class="pill"><dot></dot> <span id="statusText">Offline</span></div>
+      <button class="pill" style="background:transparent; cursor:pointer" id="btnCfg">⚙️</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="cockpit-grid">
+    
+    <!-- IZQUIERDA: CANGREJO -->
+    <div class="panel area-joyL">
+      <div class="joy-container">
+        <div class="joy-base" id="joyL"><div class="joy-stick" id="stickL"></div></div>
+      </div>
+      <div class="joy-label">Desplazamiento</div>
+    </div>
+
+    <!-- CENTRO: VIDEO + IMU -->
+    <div class="panel area-video">
+      <!-- Pantalla Video -->
+      <div class="video-frame">
+        <img id="camStream" alt="" style="display:none" />
+        <div class="overlay-msg" id="noSignal">
+          <span>BUSCANDO VIDEO...</span><br>
+          <small style="font-size:10px; opacity:0.7">Esperando conexión del Rover</small>
+        </div>
+      </div>
+
+      <!-- HUD: Inclinación con SVG -->
+      <div class="hud-row">
+        <!-- Roll -->
+        <div class="gauge">
+          <div class="icon-box">
+            <div class="horizon"></div>
+            <div id="iconRoll" class="vehicle-icon icon-rear"></div>
+          </div>
+          <span class="gauge-title">Lateral</span>
+          <span id="valRoll" class="gauge-val">0°</span>
+        </div>
+        
+        <!-- Pitch -->
+        <div class="gauge">
+          <div class="icon-box">
+            <div class="horizon"></div>
+            <div id="iconPitch" class="vehicle-icon icon-side"></div>
+          </div>
+          <span class="gauge-title">Pendiente</span>
+          <span id="valPitch" class="gauge-val">0°</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- DERECHA: CONDUCCIÓN -->
+    <div class="panel area-joyR">
+      <div class="joy-container">
+        <div class="joy-base" id="joyR"><div class="joy-stick" id="stickR"></div></div>
+      </div>
+      <div class="joy-label">Dirección</div>
+    </div>
+
+    <!-- ABAJO: BOTONES -->
+    <div class="area-acts">
+      <div class="slider-box">
+        <span style="font-size:12px; color:var(--muted)">Cámara ↕</span>
+        <input type="range" id="tiltSlider" min="0" max="180" value="90">
+      </div>
+      
+      <div class="btn-group">
+        <button id="btnAuto">🤖 AUTO: OFF</button>
+        <button id="btnStop" class="stop">🛑 STOP</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- Modal Config -->
+<dialog id="dlgCfg" style="background:#0d1736; border:1px solid #2a3b77; color:#fff; border-radius:12px; padding:20px;">
+  <h3 style="margin-top:0">Ajustes</h3>
+  <label style="font-size:12px; color:var(--muted)">IP del Host:</label>
+  <input type="text" id="inpHost" style="width:100%; padding:8px; background:#05080f; border:1px solid #1e2a52; color:#fff; border-radius:6px; margin-top:5px;">
+  <div style="margin-top:15px; text-align:right; display:flex; gap:10px; justify-content:end;">
+    <button onclick="document.getElementById('dlgCfg').close()" style="padding:8px 15px; background:transparent;">Cancelar</button>
+    <button id="btnSaveCfg" style="padding:8px 15px; background:var(--accent); color:#000;">Guardar</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const el = (id) => document.getElementById(id);
+  const STATE = {
+    host: localStorage.getItem('roverHost') || location.hostname || '192.168.4.1',
+    connected: false,
+    camIp: null
+  };
+  let ws = null, wsTimer = null;
+
+  function initWS() {
+    if(ws) { ws.close(); ws = null; }
+    let h = STATE.host.replace('http://','').replace('https://','').split(':')[0];
+    if(!h) h = '192.168.4.1'; 
+    const url = `ws://${h}:81/`;
+    
+    try {
+      ws = new WebSocket(url);
+      ws.onopen = () => { 
+        STATE.connected = true; 
+        el('statusPill').className = 'pill ok';
+        el('statusText').textContent = 'Online';
+        if(wsTimer) clearTimeout(wsTimer);
+      };
+      ws.onclose = () => { 
+        STATE.connected = false; 
+        el('statusPill').className = 'pill bad';
+        el('statusText').textContent = 'Offline';
+        wsTimer = setTimeout(initWS, 3000);
+      };
+      ws.onmessage = (msg) => { try { processTelemetry(JSON.parse(msg.data)); } catch(e){} };
+    } catch(e) { wsTimer = setTimeout(initWS, 3000); }
+  }
+
+  function send(data) { if(ws && ws.readyState === 1) ws.send(JSON.stringify(data)); }
+
+  function processTelemetry(data) {
+    if (data.cam_ip && data.cam_ip !== "desconocida" && data.cam_ip !== STATE.camIp) {
+      STATE.camIp = data.cam_ip;
+      const img = el('camStream');
+      img.src = `http://${data.cam_ip}:81/stream`;
+      img.onload = () => { el('noSignal').style.display = 'none'; img.style.display = 'block'; };
+      img.onerror = () => { el('noSignal').style.display = 'flex'; img.style.display = 'none'; };
+    }
+
+    if (data.bat !== undefined) {
+    // Rango 3S: 9.6V a 12.4V
+    let pct = Math.round(((data.bat - 9.6) / 3.0) * 100); 
+    if(pct > 100) pct = 100; if(pct < 0) pct = 0;
+    
+    el('batPct').textContent = pct + '%';
+    el('batPct').style.color = pct < 20 ? 'var(--bad)' : 'var(--text)';
+  }
+
+    // IMU con rotación de iconos SVG
+    if (data.imu) {
+      const r = Math.round(data.imu.r || 0);
+      const p = Math.round(data.imu.p || 0);
+      
+      el('valRoll').textContent = r + '°';
+      el('valPitch').textContent = p + '°';
+      
+      el('iconRoll').style.transform = `rotate(${r}deg)`;
+      el('iconPitch').style.transform = `rotate(${-p}deg)`; 
+      
+      el('valRoll').className = Math.abs(r) > 35 ? 'gauge-val danger' : 'gauge-val';
+      el('valPitch').className = Math.abs(p) > 35 ? 'gauge-val danger' : 'gauge-val';
+    }
+
+    if (data.ap !== undefined) {
+      const btn = el('btnAuto');
+      if(data.ap) { 
+        btn.classList.add('active'); 
+        btn.textContent = '🤖 AUTO: ON'; 
+      } else { 
+        btn.classList.remove('active'); 
+        btn.textContent = '🤖 AUTO: OFF'; 
+      }
+    }
+  }
+
+  // --- JOYSTICKS ---
+  class Joystick {
+    constructor(elmId, stickId, cmd) {
+      this.base = el(elmId); this.stick = el(stickId); this.cmd = cmd;
+      this.active = false; this.timer = null; this.data = { x:0, y:0 };
+      
+      const handleMove = (cx, cy) => {
+        const rect = this.base.getBoundingClientRect();
+        const centerX = rect.left + rect.width/2;
+        const centerY = rect.top + rect.height/2;
+        const maxR = (rect.width/2) - 25;
+        let dx = cx - centerX; let dy = cy - centerY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist > maxR) { const r = maxR / dist; dx *= r; dy *= r; }
+        this.stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        this.data.x = parseFloat((dx/maxR).toFixed(2));
+        this.data.y = parseFloat((-dy/maxR).toFixed(2));
+      };
+      
+      const start = (e) => {
+        e.preventDefault(); this.active = true;
+        if(this.timer) clearInterval(this.timer);
+        this.timer = setInterval(() => send({cmd:this.cmd, x:this.data.x, y:this.data.y}), 100);
+        const t = e.touches ? e.touches[0] : e; handleMove(t.clientX, t.clientY);
+      };
+      const move = (e) => {
+        if(!this.active) return; e.preventDefault();
+        const t = e.touches ? e.touches[0] : e; handleMove(t.clientX, t.clientY);
+      };
+      const end = () => {
+        this.active = false; clearInterval(this.timer);
+        this.stick.style.transform = `translate(-50%, -50%)`;
+        this.data = {x:0, y:0}; send({cmd:this.cmd, x:0, y:0});
+      };
+      
+      this.base.addEventListener('mousedown', start); this.base.addEventListener('touchstart', start);
+      window.addEventListener('mousemove', move); window.addEventListener('touchmove', move);
+      window.addEventListener('mouseup', end); window.addEventListener('touchend', end);
+    }
+  }
+
+  new Joystick('joyL', 'stickL', 'joyL');
+  new Joystick('joyR', 'stickR', 'joyR');
+
+  const slider = el('tiltSlider');
+  let lastTiltTime = 0;
+  slider.oninput = () => {
+    const now = Date.now();
+    if (now - lastTiltTime > 100) {
+      send({ cmd: 'cam_tilt', angle: parseInt(slider.value) });
+      lastTiltTime = now;
+    }
+  };
+
+  el('btnStop').onclick = () => { 
+    send({ cmd: 'stop' }); 
+    el('btnAuto').classList.remove('active');
+    el('btnAuto').textContent = '🤖 AUTO: OFF';
+    if(navigator.vibrate) navigator.vibrate(200); 
+  };
+  
+  el('btnAuto').onclick = () => send({ cmd: 'ap_toggle' });
+  
+  el('btnCfg').onclick = () => { el('inpHost').value = STATE.host; el('dlgCfg').showModal(); };
+  el('btnSaveCfg').onclick = () => {
+    const v = el('inpHost').value.trim();
+    if(v) { STATE.host = v; localStorage.setItem('roverHost', v); el('dlgCfg').close(); initWS(); }
+  };
+
+  initWS();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Explorer Rover · Dashboard</title>
+  <style>
+    :root{ --bg:#0b1020; --card:rgba(18, 26, 51, 0.95); --muted:#9fb0d3; --text:#ecf3ff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#60a5fa; --track:#1e2a52; }
+    *{box-sizing:border-box} 
+    body{
+      margin:0; font:14px system-ui,sans-serif;
+      background:linear-gradient(180deg,#0b1020 0%,#05080f 100%);
+      color:var(--text); min-height: 100vh; display: flex; flex-direction: column;
+    }
+    
+    /* HEADER */
+    header{
+      position:sticky; top:0; z-index:10; background:rgba(8,12,26,.95); backdrop-filter:blur(12px);
+      border-bottom:1px solid #1c254d; height: 60px; padding: 0 15px;
+      display:flex; align-items:center; justify-content:space-between;
+      overflow-x: auto; flex-shrink: 0;
+    }
+    
+    .brand { font-weight:800; letter-spacing:1px; color:#fff; font-size: 16px; display: flex; align-items: center; gap: 8px; margin-right: 20px; }
+    .nav-group { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+    
+    .nav-link {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+      border-radius: 8px; background: #1e2a52; border: 1px solid #2a3b77;
+      color: var(--text); text-decoration: none; font-size: 12px; font-weight: 600; transition: 0.2s;
+    }
+    .nav-link:hover { background: #2a3b77; border-color: var(--accent); }
+    .nav-link:active { transform: scale(0.96); }
+    .nav-link.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    .pill{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:99px; background:#0e1736; border:1px solid #1e2a52; font-size:11px; color:#9fb0d3; }
+    .pill.ok dot{ background:var(--ok); box-shadow:0 0 6px var(--ok); } 
+    .pill.bad dot{ background:var(--bad); }
+    dot{ width:6px; height:6px; border-radius:50%; background:#555; display:block; }
+    
+    .btn-cfg { background: transparent; border: 1px solid #2a3b77; border-radius: 8px; color: var(--muted); padding: 6px; cursor: pointer; font-size: 14px; }
+
+    /* CONTENIDO PRINCIPAL */
+    main{ 
+      flex: 1; padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%;
+      display: grid; gap: 20px; align-content: start;
+    }
+    
+    /* Grid Responsivo: 2 columnas en PC/Tablet, 1 en Móvil */
+    @media(min-width: 850px) {
+        main { grid-template-columns: 1fr 1fr; }
+    }
+
+    .card { background:var(--card); border:1px solid #1e2a52; border-radius:16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+    .card-header {
+        background: rgba(14, 23, 54, 0.5); padding: 12px 20px; border-bottom: 1px solid #1e2a52;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .card-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .card-meta { font-size: 10px; color: var(--accent); font-family: monospace; }
+    .card-body { padding: 20px; flex: 1; }
+
+    /* TARJETA DE ENERGÍA */
+    .energy-layout { display: flex; align-items: center; gap: 30px; justify-content: center; flex-wrap: wrap; }
+    
+    /* Anillo */
+    .ring-container { position: relative; width: 100px; height: 100px; }
+    .ring { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) 0%, var(--track) 0); transition: background 0.5s; }
+    .hole { width: 75%; height: 75%; border-radius: 50%; background: var(--card); display: grid; place-items: center; }
+    .pct { font-size: 22px; font-weight: 800; color: #fff; }
+    
+    /* Datos Voltaje/Estado */
+    .energy-data { display: flex; gap: 15px; flex: 1; min-width: 200px; }
+    .data-box { 
+        flex: 1; background: #0b1020; border: 1px solid #1e2a52; border-radius: 10px; padding: 15px; text-align: center;
+        display: flex; flex-direction: column; gap: 5px;
+    }
+    .data-label { font-size: 11px; color: var(--muted); }
+    .data-val { font-size: 18px; font-weight: bold; color: #fff; }
+    .footer-note { text-align: center; font-size: 11px; color: var(--muted); margin-top: 15px; opacity: 0.6; }
+
+    /* TARJETA AMBIENTE */
+    .env-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; height: 100%; }
+    .sensor-box {
+        background: #0b1020; border: 1px solid #1e2a52; border-radius: 12px;
+        padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    }
+    .sensor-icon { font-size: 24px; margin-bottom: 5px; }
+    .sensor-val { font-size: 28px; font-weight: 700; color: #fff; }
+    .sensor-label { font-size: 12px; color: var(--muted); }
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">🌍 Explorer Rover</div>
+
+  <nav class="nav-group">
+    <a href="/control" class="nav-link primary"><span>🕹️</span> Control</a>
+    <a href="/cam" class="nav-link"><span>📷</span> Stream</a>
+    <a href="/stats" class="nav-link"><span>📊</span> Stats</a>
+    <div style="width:1px; height:20px; background:#2a3b77; margin:0 5px;"></div>
+    <div id="statusPill" class="pill"><dot></dot> <span id="statusText">Offline</span></div>
+    <button onclick="location.href='/setup'" class="btn-cfg">⚙️</button>
+  </nav>
+</header>
+
+<main>
+  
+  <!-- TARJETA 1: ENERGÍA -->
+  <section class="card">
+    <div class="card-header">
+        <div class="card-title">Energía</div>
+        <div class="card-meta">—</div>
+    </div>
+    <div class="card-body">
+        <div class="energy-layout">
+            <!-- Anillo Porcentaje -->
+            <div class="ring-container">
+                <div class="ring" id="batRing"><div class="hole"><div class="pct" id="batPct">--%</div></div></div>
+            </div>
+            
+            <!-- Cajas de Datos -->
+            <div class="energy-data">
+                <div class="data-box">
+                    <span class="data-label">Voltaje</span>
+                    <span class="data-val" id="batVal">--</span>
+                </div>
+                <div class="data-box">
+                    <span class="data-label">Estado</span>
+                    <span class="data-val" id="batState">--</span>
+                </div>
+            </div>
+        </div>
+        <div class="footer-note">Rango 3S: 9.6v – 12.6v</div>
+    </div>
+  </section>
+
+  <!-- TARJETA 2: AMBIENTE -->
+  <section class="card">
+    <div class="card-header">
+        <div class="card-title">Ambiente</div>
+        <div class="card-meta" id="tsUpdate">Esperando datos...</div>
+    </div>
+    <div class="card-body">
+        <div class="env-grid">
+            <div class="sensor-box">
+                <div class="sensor-label">🌡️ Temperatura</div>
+                <div class="sensor-val" id="temp">--°C</div>
+            </div>
+            <div class="sensor-box">
+                <div class="sensor-label">💧 Humedad</div>
+                <div class="sensor-val" id="hum">--%</div>
+            </div>
+        </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  let ws = null, wsTimer = null;
+
+  // Configuración Batería (Li-Ion 3S)
+  const BAT_MIN = 9.6;  // 3.2v por celda (Descargada)
+  const BAT_MAX = 12.6; // 4.2v por celda (Cargada)
+
+  function initWS() {
+    if(ws) { ws.close(); ws = null; }
+    // Detectar IP automáticamente
+    const host = location.hostname || '192.168.4.1';
+    const url = `ws://${host}:81/`;
+    
+    try {
+      ws = new WebSocket(url);
+      ws.onopen = () => { 
+        el('statusPill').className = 'pill ok'; 
+        el('statusText').textContent = 'Online'; 
+        if(wsTimer) clearTimeout(wsTimer); 
+      };
+      ws.onclose = () => { 
+        el('statusPill').className = 'pill bad'; 
+        el('statusText').textContent = 'Offline'; 
+        wsTimer = setTimeout(initWS, 2000); 
+      };
+      ws.onmessage = (ev) => updateUI(JSON.parse(ev.data));
+    } catch(e) { wsTimer = setTimeout(initWS, 2000); }
+  }
+
+  function updateUI(data) {
+    // Hora actualización
+    const now = new Date();
+    el('tsUpdate').textContent = 'ACTUALIZADO: ' + now.toLocaleTimeString();
+
+    // Ambiente
+    if(data.env) {
+      el('temp').textContent = data.env.temp ? data.env.temp.toFixed(1) + ' °C' : '--';
+      el('hum').textContent = data.env.hum ? Math.round(data.env.hum) + ' %' : '--';
+    }
+
+    // Batería
+    const voltage = data.bat || 0; 
+    if (voltage > 0) {
+        let pct = Math.round(((voltage - BAT_MIN) / (BAT_MAX - BAT_MIN)) * 100);
+        if(pct > 100) pct = 100; if(pct < 0) pct = 0;
+        
+        const color = pct < 20 ? 'var(--bad)' : pct < 50 ? 'var(--warn)' : 'var(--ok)';
+        el('batRing').style.background = `conic-gradient(${color} ${pct}%, var(--track) 0)`;
+        el('batPct').textContent = pct + '%';
+        el('batVal').textContent = voltage.toFixed(2) + ' v';
+        
+        // Estado texto
+        let state = 'Normal';
+        if(pct >= 95) state = 'Cargada';
+        else if(pct < 20) state = 'Crítica';
+        else if(pct < 50) state = 'Baja';
+        el('batState').textContent = state;
+        el('batState').style.color = color;
+    }
+  }
+
+  initWS();
+})();
+</script>
+</body>
+</html>

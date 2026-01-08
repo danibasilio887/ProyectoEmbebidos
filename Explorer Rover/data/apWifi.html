@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurar Rover</title>
+    <style>
+        :root{--bg:#0b1020;--card:#121a33;--muted:#9fb0d3;--text:#ecf3ff;--accent:#60a5fa;--track:#1e2a52;}
+        *{box-sizing:border-box}
+        body{font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:linear-gradient(180deg,#0b1020 0%,#0b0f1a 100%);color:var(--text)}
+        .container{text-align:center;background-color:var(--card);padding:30px;border-radius:16px;box-shadow:0 4px 30px rgba(0,0,0,.2);width:100%;max-width:400px;margin:16px;border:1px solid var(--track)}
+        h1{color:var(--text);font-size:2rem;margin-bottom:20px;font-weight:700}
+        .btn{background-color:var(--accent);color:var(--text);border:none;padding:15px 32px;text-align:center;font-size:1rem;margin:10px;border-radius:12px;cursor:pointer;transition:background-color 0.3s;width:100%;max-width:300px;font-weight:600}
+        .btn.secondary{background-color:var(--track);color:var(--muted)}
+        .btn:hover{background-color:#1e2a52}
+        .btn:disabled{background-color:#0e1736;color:var(--muted);cursor:not-allowed}
+        .input-field{padding:12px;margin-top:10px;font-size:1rem;width:100%;max-width:300px;border:1px solid #2a3b77;border-radius:10px;background-color:#07102e;color:#e2ecff}
+        .hint{font-size:12px;color:var(--muted);margin-top:15px;text-align:center}
+        #status{color:var(--accent);margin-top:15px;display:none}
+    </style>
+</head>
+<body>
+
+    <div class="container" id="main-container">
+        <h1>Explorer Rover</h1>
+        <button class="btn" onclick="connectLocal()">Continuar en Local</button>
+        <button class="btn secondary" onclick="showWiFiForm()">Vincular Red WiFi</button>
+        
+        <!-- Formulario para ingresar SSID y Contraseña -->
+        <div id="wifi-form" style="display:none; margin-top: 20px;">
+            <input type="text" id="ssid" class="input-field" placeholder="Nombre de la Red (SSID)" required><br>
+            <input type="password" id="password" class="input-field" placeholder="Contraseña" required><br><br>
+            <button class="btn" id="saveBtn" onclick="saveWiFiCredentials()">Guardar y Conectar</button>
+        </div>
+
+        <div id="status"></div>
+        <div class="hint">Si continúas en local, podrás controlar el Rover, pero no tendrá conexión a internet.</div>
+    </div>
+
+    <script>
+        // Función para continuar en modo local con el ESP32
+        function connectLocal() {
+            // Simplemente redirigimos a /home. El ESP32 ya está sirviendo la app
+            // en su propia IP (ej. 192.168.4.1)
+            const status = document.getElementById('status');
+            status.textContent = 'Cargando app local...';
+            status.style.display = 'block';
+            window.location.href = '/home';
+        }
+
+        // Función para mostrar el formulario de WiFi
+        function showWiFiForm() {
+            document.getElementById('wifi-form').style.display = 'block';
+        }
+
+        // Función para ENVIAR las credenciales al ESP32
+        async function saveWiFiCredentials() {
+            const ssid = document.getElementById('ssid').value;
+            const password = document.getElementById('password').value;
+            const status = document.getElementById('status');
+            const saveBtn = document.getElementById('saveBtn');
+
+            if (!ssid || !password) {
+                status.textContent = 'Por favor ingresa un SSID y una contraseña.';
+                status.style.display = 'block';
+                return;
+            }
+
+            // Deshabilitar botón y mostrar estado
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Guardando...';
+            status.textContent = 'Enviando credenciales al Rover...';
+            status.style.display = 'block';
+            
+            try {
+                // Usar 'fetch' para enviar los datos al endpoint /save-wifi
+                const response = await fetch('/save-wifi', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    // Codificar los datos para el formulario
+                    body: new URLSearchParams({
+                        'ssid': ssid,
+                        'password': password
+                    })
+                });
+
+                if (response.ok) {
+                    // El ESP32 responderá con un HTML, y luego se reiniciará
+                    document.getElementById('main-container').innerHTML = '<h1>¡Guardado!</h1><p>El Rover se está reiniciando para conectarse a la nueva red. Por favor, conéctate a esa red y accede a la nueva IP del Rover.</p>';
+                } else {
+                    const errorText = await response.text();
+                    status.textContent = `Error al guardar: ${errorText}`;
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Guardar y Conectar';
+                }
+
+            } catch (error) {
+                console.error('Error en fetch:', error);
+                status.textContent = 'Error de conexión. Asegúrate de estar conectado al WiFi "Explorer Rover".';
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Guardar y Conectar';
+            }
+        }
+    </script>
+
+</body>
+</html>
